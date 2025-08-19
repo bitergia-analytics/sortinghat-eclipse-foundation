@@ -1,0 +1,9 @@
+---
+title: Eclipse Foundation identities importer
+category: added
+author: Santiago Dueñas <sduenas@bitergia.com>
+issue: null
+notes: >
+ Implementation of a SortingHat backend to import
+ identities from the Eclipse Foundation.
+
