@@ -17,6 +17,7 @@
 
 import logging
 
+import dateutil.relativedelta
 import requests
 
 from django.conf import settings
@@ -27,7 +28,10 @@ from requests_oauth2client import (
     OAuth2Client
 )
 
-from grimoirelab_toolkit.datetime import str_to_datetime
+from grimoirelab_toolkit.datetime import (
+    str_to_datetime,
+    datetime_utcnow
+)
 from sortinghat.core.importer.backend import IdentitiesImporter
 from sortinghat.core.importer.models import (
     Individual,
@@ -53,24 +57,43 @@ class EclipseFoundationAccountsImporter(IdentitiesImporter):
 
     The importer fetches and stores in the database identities
     created or updated after the given date (`from_date`) parameter.
-    When no date is given, it will import all the identities available
-    in the platform.
+    Currently, it can only import identities updated since a year ago.
+    When no date is given, it will import all the identities updated
+    since last year.
 
     Each individual created after importing will have two identities:
     one with source set as 'eclipsefdn' that includes their name, email
     and username as it comes from the platform, and a second one with
     source 'github' only when the github user was set by the identity
     on the Eclipse profile.
+
+    :param ctx: SortingHat context
+    :param url: not used on this importer
+    :param from_date: start fetching identities updated from this date
+
+    :raises ValueError: when the date is older than one year ago
     """
     NAME = "EclipseFoundation"
 
     def __init__(self, ctx, url, from_date=None):
         super().__init__(ctx, url)
 
-        if isinstance(from_date, str):
-            from_date = str_to_datetime(from_date)
+        min_date = datetime_utcnow() - dateutil.relativedelta.relativedelta(years=1)
 
-        self.from_date = from_date
+        if not from_date:
+            self.from_date = min_date
+        elif isinstance(from_date, str):
+            self.from_date = str_to_datetime(from_date)
+        else:
+            self.from_date = from_date
+
+        if self.from_date < min_date:
+            msg = (
+                "Invalid 'from_date' value. It can only import identities updated since a year ago."
+                "from_date=" + from_date
+            )
+            logger.error(msg)
+            raise ValueError(msg)
 
     def get_individuals(self):
         """Get the individuals from the Eclipse Foundation platform."""
@@ -81,7 +104,7 @@ class EclipseFoundationAccountsImporter(IdentitiesImporter):
         client = EclipseFoundationAPIClient()
         client.login(user_id, password)
 
-        epoch = int(self.from_date.timestamp()) if self.from_date else 1
+        epoch = int(self.from_date.timestamp())
 
         # Fetch accounts pages
         for account in client.fetch_accounts(epoch=epoch):

@@ -4,6 +4,8 @@ import os
 from unittest.mock import patch
 
 import httpretty
+
+from dateutil.relativedelta import relativedelta
 from dateutil.tz import tzutc
 from django.test import TestCase
 from django.contrib.auth import get_user_model
@@ -18,6 +20,9 @@ from sortinghat.core.importer.backends.eclipse import EclipseFoundationAccountsI
 ECLIPSE_API_URL = "https://api.eclipse.org"
 ECLIPSE_ACCOUNTS_URL = "https://accounts.eclipse.org/account/updated"
 OAUTH_TOKEN_ENDPOINT = "https://accounts.eclipse.org/oauth2/token"
+
+
+MOCK_DATETIME_NOW = datetime.datetime(2025, 1, 1, tzinfo=tzutc())
 
 
 def read_file(filename, mode='r'):
@@ -95,29 +100,49 @@ class TestEclipseImporter(TestCase):
         self.user = get_user_model().objects.create(username='test')
         self.ctx = SortingHatContext(self.user)
 
-    def test_initialization(self):
+    @patch('sortinghat.core.importer.backends.eclipse.datetime_utcnow', return_value=MOCK_DATETIME_NOW)
+    def test_initialization(self, mock_datetime_now):
         """Test whether attributes are initialized"""
 
         url = "https://test-url.com/"
 
-        importer = EclipseFoundationAccountsImporter(ctx=self.ctx,
-                                       url=url)
+        importer = EclipseFoundationAccountsImporter(
+            ctx=self.ctx,
+            url=url
+        )
 
         self.assertEqual(importer.url, url)
         self.assertEqual(importer.ctx, self.ctx)
         self.assertEqual(importer.NAME, "EclipseFoundation")
-        self.assertIsNone(importer.from_date)
+
+        # 'from_date' is 1 year before the current date (MOCK_DATETIME_NOW)
+        self.assertEqual(importer.from_date, mock_datetime_now.return_value - relativedelta(years=1))
+
+    @patch('sortinghat.core.importer.backends.eclipse.datetime_utcnow', return_value=MOCK_DATETIME_NOW)
+    def test_parse_from_date(self, mock_datetime_now):
+        """Check if from_date parameter is parsed correctly"""
 
         # Check from_date is parsed correctly
         importer = EclipseFoundationAccountsImporter(
             ctx=self.ctx,
-            url=url,
-            from_date="2023-12-01"
+            url="https://test-url.com/",
+            from_date="2025-12-01"
         )
-        self.assertEqual(importer.from_date, datetime.datetime(year=2023,
+        self.assertEqual(importer.from_date, datetime.datetime(year=2025,
                                                                month=12,
                                                                day=1,
                                                                tzinfo=tzutc()))
+
+    @patch('sortinghat.core.importer.backends.eclipse.datetime_utcnow', return_value=MOCK_DATETIME_NOW)
+    def test_from_date_older_than_one_year(self, mock_datetime_now):
+        """Check if an error is raised when the from_date is invalid"""
+
+        with self.assertRaises(ValueError):
+            _ = EclipseFoundationAccountsImporter(
+                ctx=self.ctx,
+                url="https://test-url.com/",
+                from_date="2000-01-01"
+            )
 
     def test_backend_name(self):
         """Test whether the NAME of the backend is right"""
@@ -126,7 +151,8 @@ class TestEclipseImporter(TestCase):
 
     @httpretty.activate
     @patch('sortinghat.core.importer.backends.eclipse.EclipseFoundationAPIClient.login', return_value="mocked_login")
-    def test_import_identities(self, mock_login):
+    @patch('sortinghat.core.importer.backends.eclipse.datetime_utcnow', return_value=MOCK_DATETIME_NOW)
+    def test_import_identities(self, mock_login, mock_datetime_now):
 
         # Set up a mock HTTP server
         requests, bodies = setup_mock_server()
@@ -194,14 +220,15 @@ class TestEclipseImporter(TestCase):
 
     @httpretty.activate
     @patch('sortinghat.core.importer.backends.eclipse.EclipseFoundationAPIClient.login', return_value="mocked_login")
-    def test_import_no_identities(self, mock_login):
+    @patch('sortinghat.core.importer.backends.eclipse.datetime_utcnow', return_value=MOCK_DATETIME_NOW)
+    def test_import_no_identities(self, mock_login, mock_datetime_now):
         # Set up a mock HTTP server
         requests, bodies = setup_mock_server()
 
         importer = EclipseFoundationAccountsImporter(
             ctx=self.ctx,
             url=None,
-            from_date=datetime.datetime(2100, 1, 1, 0, 0, 0, tzinfo=tzutc())
+            from_date="2100-1-1"
         )
 
         n = importer.import_identities()
@@ -211,7 +238,8 @@ class TestEclipseImporter(TestCase):
 
     @httpretty.activate
     @patch('sortinghat.core.importer.backends.eclipse.EclipseFoundationAPIClient.login', return_value="mocked_login")
-    def test_import_merge_identities(self, mock_login):
+    @patch('sortinghat.core.importer.backends.eclipse.datetime_utcnow', return_value=MOCK_DATETIME_NOW)
+    def test_import_merge_identities(self, mock_login, mock_datetime_now):
 
         # Add individuals that share email and github handle
         api.add_identity(self.ctx, source='github', username='jsmith')
@@ -231,7 +259,8 @@ class TestEclipseImporter(TestCase):
 
     @httpretty.activate
     @patch('sortinghat.core.importer.backends.eclipse.EclipseFoundationAPIClient.login', return_value="mocked_login")
-    def test_import_enrollments(self, mock_login):
+    @patch('sortinghat.core.importer.backends.eclipse.datetime_utcnow', return_value=MOCK_DATETIME_NOW)
+    def test_import_enrollments(self, mock_login, mock_datetime_now):
 
         # Set up a mock HTTP server
         setup_mock_server()
