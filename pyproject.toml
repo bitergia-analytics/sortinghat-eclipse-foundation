@@ -25,7 +25,7 @@ classifiers = [
    "Programming Language :: Python :: 3"
 ]
 
-requires-python = ">=3.9,<4.0"
+requires-python = ">=3.10,<4.0"
 dependencies = [
     "requests-oauth2client (>=1.7.0,<2.0.0)",
     "sortinghat (>=1.10.0,<2.0.0)"
