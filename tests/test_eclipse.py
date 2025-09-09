@@ -31,7 +31,7 @@ def read_file(filename, mode='r'):
     return content
 
 
-def setup_mock_server():
+def setup_mock_server(raise_5xx_errors=False):
     """Configure a Mock server"""
 
     def request_callback(request, uri, headers):
@@ -87,6 +87,17 @@ def setup_mock_server():
     httpretty.register_uri(httpretty.GET,
                            ECLIPSE_API_URL + "/account/profile/jrae/employment-history",
                            body=read_file('data/eclipse_jrae_employment.json'))
+
+    # Overwrite jsmith and jdoe profile replies to raise 5xx errors
+    if raise_5xx_errors:
+        httpretty.register_uri(httpretty.GET,
+                               ECLIPSE_API_URL + "/account/profile/jsmith",
+                               body="",
+                               status=500)
+        httpretty.register_uri(httpretty.GET,
+                               ECLIPSE_API_URL + "/account/profile/jdoe",
+                               body="",
+                               status=504)
 
     return requests, bodies
 
@@ -153,6 +164,7 @@ class TestEclipseImporter(TestCase):
     @patch('sortinghat.core.importer.backends.eclipse.EclipseFoundationAPIClient.login', return_value="mocked_login")
     @patch('sortinghat.core.importer.backends.eclipse.datetime_utcnow', return_value=MOCK_DATETIME_NOW)
     def test_import_identities(self, mock_login, mock_datetime_now):
+        """Check if identities are imported"""
 
         # Set up a mock HTTP server
         requests, bodies = setup_mock_server()
@@ -222,6 +234,8 @@ class TestEclipseImporter(TestCase):
     @patch('sortinghat.core.importer.backends.eclipse.EclipseFoundationAPIClient.login', return_value="mocked_login")
     @patch('sortinghat.core.importer.backends.eclipse.datetime_utcnow', return_value=MOCK_DATETIME_NOW)
     def test_import_no_identities(self, mock_login, mock_datetime_now):
+        """Check if all goes ok when there aren't identities to import"""
+
         # Set up a mock HTTP server
         requests, bodies = setup_mock_server()
 
@@ -239,7 +253,46 @@ class TestEclipseImporter(TestCase):
     @httpretty.activate
     @patch('sortinghat.core.importer.backends.eclipse.EclipseFoundationAPIClient.login', return_value="mocked_login")
     @patch('sortinghat.core.importer.backends.eclipse.datetime_utcnow', return_value=MOCK_DATETIME_NOW)
+    def test_ignore_5xx_errors(self, mock_login, mock_datetime_now):
+        """Check if the importer ignores 5xx errors"""
+
+        # Set up a mock HTTP server
+        requests, bodies = setup_mock_server(raise_5xx_errors=True)
+
+        importer = EclipseFoundationAccountsImporter(ctx=self.ctx, url=None, from_date=None)
+        n = importer.import_identities()
+
+        # In total, only 1 individual and 2 identities will be imported.
+        # Individuals 'jsmith' and 'jdoe' profiles return 5xx errors.
+        self.assertEqual(n, 2)
+
+        individuals = Individual.objects.order_by('mk').all()
+
+        self.assertEqual(len(individuals), 1)
+
+        # Jane Rae
+        jrae = individuals[0]
+        self.assertEqual(jrae.profile.name, 'Jane Rae')
+        self.assertEqual(jrae.profile.email, 'jrae@example.com')
+
+        ids = jrae.identities.order_by('uuid').all()
+
+        self.assertEqual(len(ids), 2)
+        self.assertEqual(ids[0].name, 'Jane Rae')
+        self.assertEqual(ids[0].email, 'jrae@example.com')
+        self.assertEqual(ids[0].username, 'jrae')
+        self.assertEqual(ids[0].source, 'eclipsefdn')
+
+        self.assertEqual(ids[1].name, 'Jane Rae')
+        self.assertEqual(ids[1].email, 'jrae@example.com')
+        self.assertEqual(ids[1].username, 'jrae')
+        self.assertEqual(ids[1].source, 'github')
+
+    @httpretty.activate
+    @patch('sortinghat.core.importer.backends.eclipse.EclipseFoundationAPIClient.login', return_value="mocked_login")
+    @patch('sortinghat.core.importer.backends.eclipse.datetime_utcnow', return_value=MOCK_DATETIME_NOW)
     def test_import_merge_identities(self, mock_login, mock_datetime_now):
+        """Check if existing identities are merged"""
 
         # Add individuals that share email and github handle
         api.add_identity(self.ctx, source='github', username='jsmith')
@@ -261,6 +314,7 @@ class TestEclipseImporter(TestCase):
     @patch('sortinghat.core.importer.backends.eclipse.EclipseFoundationAPIClient.login', return_value="mocked_login")
     @patch('sortinghat.core.importer.backends.eclipse.datetime_utcnow', return_value=MOCK_DATETIME_NOW)
     def test_import_enrollments(self, mock_login, mock_datetime_now):
+        """Check if enrolments are imported"""
 
         # Set up a mock HTTP server
         setup_mock_server()
