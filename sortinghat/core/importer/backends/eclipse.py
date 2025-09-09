@@ -108,7 +108,20 @@ class EclipseFoundationAccountsImporter(IdentitiesImporter):
 
         # Fetch accounts pages
         for account in client.fetch_accounts(epoch=epoch):
-            ef_profile = client.fetch_account_profile(account['name'])
+            try:
+                ef_profile = client.fetch_account_profile(account['name'])
+            except requests.exceptions.HTTPError as error:
+                # Ignore 5xx errors
+                if 500 <= error.response.status_code < 600:
+                    msg = (
+                        f"Unable to fetch {account['name']} profile."
+                        f"Server error: {error.response.status_code} - {error.response.reason}."
+                        "Skipping"
+                    )
+                    logger.error(msg)
+                    continue
+                else:
+                    raise error
 
             if not ef_profile['eca']['signed']:
                 continue
