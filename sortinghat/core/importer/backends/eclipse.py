@@ -108,22 +108,9 @@ class EclipseFoundationAccountsImporter(IdentitiesImporter):
 
         # Fetch accounts pages
         for account in client.fetch_accounts(epoch=epoch):
-            try:
-                ef_profile = client.fetch_account_profile(account['name'])
-            except requests.exceptions.HTTPError as error:
-                # Ignore 5xx errors
-                if 500 <= error.response.status_code < 600:
-                    msg = (
-                        f"Unable to fetch {account['name']} profile."
-                        f"Server error: {error.response.status_code} - {error.response.reason}."
-                        "Skipping"
-                    )
-                    logger.error(msg)
-                    continue
-                else:
-                    raise error
+            ef_profile = client.fetch_account_profile(account['name'])
 
-            if not ef_profile['eca']['signed']:
+            if not ef_profile:
                 continue
 
             individual = Individual(uuid=ef_profile['uid'])
@@ -154,21 +141,22 @@ class EclipseFoundationAccountsImporter(IdentitiesImporter):
                 )
                 individual.identities.append(idt)
 
-            employment_history = client.fetch_employment_history(account['name'])
-
             # Fetch enrollments for the identity. If no enrollment is set
             # use the organization field from the profile, if set.
-            for employment in employment_history:
-                org = Organization(name=employment['organization_name'])
-                start, end = None, None
+            employment_history = client.fetch_employment_history(account['name'])
 
-                if employment['start']:
-                    start = str_to_datetime(employment['start'])
-                if employment['end']:
-                    end = str_to_datetime(employment['end'])
+            if employment_history:
+                for employment in employment_history:
+                    org = Organization(name=employment['organization_name'])
+                    start, end = None, None
 
-                enr = Enrollment(org, start=start, end=end)
-                individual.enrollments.append(enr)
+                    if employment['start']:
+                        start = str_to_datetime(employment['start'])
+                    if employment['end']:
+                        end = str_to_datetime(employment['end'])
+
+                    enr = Enrollment(org, start=start, end=end)
+                    individual.enrollments.append(enr)
 
             if not individual.enrollments:
                 company = ef_profile.get('org', None)
@@ -292,8 +280,21 @@ class EclipseFoundationAPIClient:
     def _fetch(self, url, params=None):
         """Generic query to Eclipse usr API."""
 
-        response = requests.get(url, params=params, auth=self.token)
-        response.raise_for_status()
+        try:
+            response = requests.get(url, params=params, auth=self.token)
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as error:
+            # Ignore 5xx errors
+            if 500 <= error.response.status_code < 600:
+                msg = (
+                    f"Unable to fetch {url}"
+                    f"Server error: {error.response.status_code} - {error.response.reason}."
+                    "Skipping"
+                )
+                logger.error(msg)
+                return None
+            else:
+                raise error
 
         return response.json()
 
