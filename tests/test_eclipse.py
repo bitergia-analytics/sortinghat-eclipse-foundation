@@ -98,6 +98,10 @@ def setup_mock_server(raise_5xx_errors=False):
                                ECLIPSE_API_URL + "/account/profile/jdoe",
                                body="",
                                status=504)
+        httpretty.register_uri(httpretty.GET,
+                               ECLIPSE_API_URL + "/account/profile/jrae/employment-history",
+                               body="",
+                               status=504)
 
     return requests, bodies
 
@@ -264,6 +268,8 @@ class TestEclipseImporter(TestCase):
 
         # In total, only 1 individual and 2 identities will be imported.
         # Individuals 'jsmith' and 'jdoe' profiles return 5xx errors.
+        # Employment info for 'jrae' also returns an error, so the affiliation
+        # info is taken from the profile page setting default dates.
         self.assertEqual(n, 2)
 
         individuals = Individual.objects.order_by('mk').all()
@@ -287,6 +293,14 @@ class TestEclipseImporter(TestCase):
         self.assertEqual(ids[1].email, 'jrae@example.com')
         self.assertEqual(ids[1].username, 'jrae')
         self.assertEqual(ids[1].source, 'github')
+
+        enrollments = jrae.enrollments.all()
+        self.assertEqual(len(enrollments), 1)
+
+        rol = enrollments[0]
+        self.assertEqual(rol.group.name, "ACME")
+        self.assertEqual(rol.start, MIN_PERIOD_DATE)
+        self.assertEqual(rol.end, MAX_PERIOD_DATE)
 
     @httpretty.activate
     @patch('sortinghat.core.importer.backends.eclipse.EclipseFoundationAPIClient.login', return_value="mocked_login")
