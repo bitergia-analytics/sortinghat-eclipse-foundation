@@ -206,9 +206,14 @@ class EclipseFoundationAPIClient:
     ECLIPSE_API_URL = "https://api.eclipse.org"
     ECLIPSE_ACCOUNTS_URL = "https://accounts.eclipse.org"
     OAUTH_TOKEN_ENDPOINT = "https://accounts.eclipse.org/oauth2/token"
+    ECLIPSE_SCOPE = "eclipsefdn_view_all_profiles"
+
+    MAX_RETRIES = 3
 
     def __init__(self):
         self.token = None
+        self.user_id = None
+        self.password = None
 
     def login(self, user_id, password):
         """Login on the Eclipse platform.
@@ -217,10 +222,12 @@ class EclipseFoundationAPIClient:
         "eclipsefdn_view_all_profiles" that will allow us to
         fetch all the info about profiles/identities.
         """
+        self.user_id = user_id
+        self.password = password
         self.token = self._authenticate(
-            user_id,
-            password,
-            "eclipsefdn_view_all_profiles",
+            self.user_id,
+            self.password,
+            self.ECLIPSE_SCOPE,
         )
 
     def logout(self):
@@ -281,8 +288,7 @@ class EclipseFoundationAPIClient:
         """Generic query to Eclipse usr API."""
 
         try:
-            response = requests.get(url, params=params, auth=self.token)
-            response.raise_for_status()
+            data = self._fetch_retry(url, params)
         except requests.exceptions.HTTPError as error:
             # Ignore 5xx errors
             if 500 <= error.response.status_code < 600:
@@ -296,7 +302,41 @@ class EclipseFoundationAPIClient:
             else:
                 raise error
 
-        return response.json()
+        return data
+
+    def _fetch_retry(self, url, params=None):
+        """Fetch URL retrying in case of 403 or 500 errors.
+
+        When getting a 403 error, the method will try to authenticate
+        again in case the OAuth2 token has expired.
+        """
+        retries = 0
+        max_retries = self.MAX_RETRIES
+
+        while retries < max_retries:
+            response = requests.get(url, params=params, auth=self.token)
+
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 403:
+                # Refresh token if needed and try again
+                if self.token.expires_at <= datetime_utcnow():
+                    self.token = self._authenticate(
+                        self.user_id,
+                        self.password,
+                        self.ECLIPSE_SCOPE,
+                    )
+                retries += 1
+            elif 500 <= response.status_code < 600:
+                # Errors could have been related to server overloading
+                retries += 1
+            else:
+                response.raise_for_status()
+
+        response = requests.get(url, params=params, auth=self.token)
+        response.raise_for_status()
+
+        return response
 
     def _authenticate(self, client_id, client_secret, scope):
         """Authenticate using OAuth2.

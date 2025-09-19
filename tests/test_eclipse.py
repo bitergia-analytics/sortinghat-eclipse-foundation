@@ -67,7 +67,8 @@ def setup_mock_server(raise_5xx_errors=False):
     # John Smith profile pages
     httpretty.register_uri(httpretty.GET,
                            ECLIPSE_API_URL + "/account/profile/jsmith",
-                           body=read_file('data/eclipse_jsmith.json'))
+                           body=read_file('data/eclipse_jsmith.json') if not raise_5xx_errors else "",
+                           status=200 if not raise_5xx_errors else 500)
     httpretty.register_uri(httpretty.GET,
                            ECLIPSE_API_URL + "/account/profile/jsmith/employment-history",
                            body=read_file('data/eclipse_jsmith_employment.json'))
@@ -75,7 +76,8 @@ def setup_mock_server(raise_5xx_errors=False):
     # John Doe profile pages
     httpretty.register_uri(httpretty.GET,
                            ECLIPSE_API_URL + "/account/profile/jdoe",
-                           body=read_file('data/eclipse_jdoe.json'))
+                           body=read_file('data/eclipse_jdoe.json') if not raise_5xx_errors else "",
+                           status=200 if not raise_5xx_errors else 500)
     httpretty.register_uri(httpretty.GET,
                            ECLIPSE_API_URL + "/account/profile/jdoe/employment-history",
                            body=read_file('data/eclipse_jdoe_employment.json'))
@@ -86,22 +88,8 @@ def setup_mock_server(raise_5xx_errors=False):
                            body=read_file('data/eclipse_jrae.json'))
     httpretty.register_uri(httpretty.GET,
                            ECLIPSE_API_URL + "/account/profile/jrae/employment-history",
-                           body=read_file('data/eclipse_jrae_employment.json'))
-
-    # Overwrite jsmith and jdoe profile replies to raise 5xx errors
-    if raise_5xx_errors:
-        httpretty.register_uri(httpretty.GET,
-                               ECLIPSE_API_URL + "/account/profile/jsmith",
-                               body="",
-                               status=500)
-        httpretty.register_uri(httpretty.GET,
-                               ECLIPSE_API_URL + "/account/profile/jdoe",
-                               body="",
-                               status=504)
-        httpretty.register_uri(httpretty.GET,
-                               ECLIPSE_API_URL + "/account/profile/jrae/employment-history",
-                               body="",
-                               status=504)
+                           body=read_file('data/eclipse_jrae_employment.json') if not raise_5xx_errors else "",
+                           status=200 if not raise_5xx_errors else 500)
 
     return requests, bodies
 
