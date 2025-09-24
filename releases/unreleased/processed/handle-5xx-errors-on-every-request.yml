@@ -1,9 +1,0 @@
----
-title: 5xx errors handled for every request
-category: added
-author: Santiago Dueñas <sduenas@bitergia.com>
-issue: null
-notes: >
-  Errors were only handled when profiles were fetched
-  and not in other cases.
-

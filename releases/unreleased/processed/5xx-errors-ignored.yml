@@ -1,9 +1,0 @@
----
-title: 5xx errors ignored
-category: added
-author: Santiago Dueñas <sduenas@bitergia.com>
-issue: null
-notes: >
-  The importer won't fail when 5xx errors are returned
-  by the server. These errors are normally due to invalid
-  identities stored in the platform.
