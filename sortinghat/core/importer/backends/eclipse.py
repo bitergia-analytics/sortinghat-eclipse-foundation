@@ -247,7 +247,8 @@ class EclipseFoundationAPIClient:
             url = f"{self.ECLIPSE_ACCOUNTS_URL}/account/updated"
             params = {
                 'since': epoch,
-                'page': page
+                'page': page,
+                'pagesize': 100,
             }
 
             logger.debug(f"Fetching accounts from API; url={url}, params={params}")
@@ -259,9 +260,9 @@ class EclipseFoundationAPIClient:
             naccounts = len(data['result'])
             total_accounts += naccounts
 
-            logger.debug(f"Accounts from API fetched; url={url}, params={params}, naccounts={naccounts}")
+            logger.info(f"Accounts from API fetched; url={url}, params={params}, naccounts={naccounts}")
 
-            if page >= data['pagination']['result_end']:
+            if data['pagination']['result_size'] == 0:
                 break
 
             page += 1
