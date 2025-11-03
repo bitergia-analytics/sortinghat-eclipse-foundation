@@ -1,0 +1,10 @@
+---
+title: Parallel processing for importing accounts
+category: performance
+author: Jose Javier Merchante <jjmerchante@bitergia.com>
+issue: null
+notes: >
+  Implement parallel processing to improve the efficiency
+  of account imports. By processing multiple accounts
+  simultaneously, we reduce the overall time taken
+  to fetch and process account data.
