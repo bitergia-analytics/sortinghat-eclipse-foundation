@@ -1,6 +1,6 @@
 [project]
 name = "sortinghat-eclipse-foundation"
-version = "0.1.2-rc.1"
+version = "0.1.2"
 description = "SortingHat backend to import identities from the Eclipse Foundation"
 authors = [
     {name = "Bitergia Developers"}
