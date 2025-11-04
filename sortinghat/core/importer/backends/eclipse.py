@@ -20,6 +20,8 @@ import logging
 import dateutil.relativedelta
 import requests
 
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
+
 from django.conf import settings
 from django.db.models import (Q, Subquery)
 
@@ -46,6 +48,9 @@ from sortinghat.core import models as sh_models
 ECLIPSE_SOURCE = "eclipsefdn"
 GITHUB_SOURCE = "github"
 
+# Parallel processing
+MAX_WORKERS = 8
+MAX_QUEUE_SIZE = 100
 
 logger = logging.getLogger(__name__)
 
@@ -104,68 +109,96 @@ class EclipseFoundationAccountsImporter(IdentitiesImporter):
 
         epoch = int(self.from_date.timestamp())
 
-        # Fetch accounts pages
-        for account in client.fetch_accounts(epoch=epoch):
-            ef_profile = client.fetch_account_profile(account['name'])
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            pending = set()
 
-            if not ef_profile:
-                continue
+            for account in client.fetch_accounts(epoch=epoch):
+                future = executor.submit(self.process_account, client, account)
+                pending.add(future)
 
-            individual = Individual(uuid=ef_profile['uid'])
+                # Wait to complete when reaching max queue size
+                if len(pending) >= MAX_QUEUE_SIZE:
+                    done, pending = wait(pending, return_when=FIRST_COMPLETED, timeout=60)
+                    if not done:
+                        raise TimeoutError("Timeout waiting for Eclipse account processing")
+                    for future in done:
+                        individual = future.result()
+                        if individual:
+                            yield individual
 
-            name = ef_profile['first_name'] + ' ' + ef_profile['last_name']
-            email = ef_profile['mail']
+        # Process remaining futures
+        for future in as_completed(pending, timeout=600):
+            try:
+                individual = future.result()
+                if individual:
+                    yield individual
+            except Exception as exc:
+                logger.error(f"Error processing Eclipse account; error={exc}")
 
-            prf = Profile()
-            prf.name = name
-            prf.email = email
+    @staticmethod
+    def process_account(client, account):
+        """Process a single Eclipse account to create an Individual."""
 
-            individual.profile = prf
+        ef_profile = client.fetch_account_profile(account['name'])
 
-            eclipse_id = Identity(
-                source=ECLIPSE_SOURCE,
+        if not ef_profile:
+            return None
+
+        individual = Individual(uuid=ef_profile['uid'])
+
+        name = ef_profile['first_name'] + ' ' + ef_profile['last_name']
+        email = ef_profile['mail']
+
+        prf = Profile()
+        prf.name = name
+        prf.email = email
+
+        individual.profile = prf
+
+        eclipse_id = Identity(
+            source=ECLIPSE_SOURCE,
+            name=name,
+            email=email,
+            username=ef_profile['name'],
+        )
+        individual.identities.append(eclipse_id)
+
+        if ef_profile['github_handle']:
+            idt = Identity(
+                source=GITHUB_SOURCE,
                 name=name,
+                username=ef_profile['github_handle'],
                 email=email,
-                username=ef_profile['name'],
             )
-            individual.identities.append(eclipse_id)
+            individual.identities.append(idt)
 
-            if ef_profile['github_handle']:
-                idt = Identity(
-                    source=GITHUB_SOURCE,
-                    name=name,
-                    username=ef_profile['github_handle'],
-                    email=email,
-                )
-                individual.identities.append(idt)
+        # Fetch enrollments for the identity. If no enrollment is set
+        # use the organization field from the profile, if set.
+        employment_history = client.fetch_employment_history(account['name'])
 
-            # Fetch enrollments for the identity. If no enrollment is set
-            # use the organization field from the profile, if set.
-            employment_history = client.fetch_employment_history(account['name'])
+        if employment_history:
+            for employment in employment_history:
+                org = Organization(name=employment['organization_name'])
+                start, end = None, None
 
-            if employment_history:
-                for employment in employment_history:
-                    org = Organization(name=employment['organization_name'])
-                    start, end = None, None
+                if employment['start']:
+                    start = str_to_datetime(employment['start'])
+                if employment['end']:
+                    end = str_to_datetime(employment['end'])
 
-                    if employment['start']:
-                        start = str_to_datetime(employment['start'])
-                    if employment['end']:
-                        end = str_to_datetime(employment['end'])
+                enr = Enrollment(org, start=start, end=end)
+                individual.enrollments.append(enr)
 
-                    enr = Enrollment(org, start=start, end=end)
-                    individual.enrollments.append(enr)
+        if not individual.enrollments:
+            company = ef_profile.get('org', None)
+            if company:
+                org = Organization(name=company)
+                enr = Enrollment(org)
+                individual.enrollments.append(enr)
 
-            if not individual.enrollments:
-                company = ef_profile.get('org', None)
-                if company:
-                    org = Organization(name=company)
-                    enr = Enrollment(org)
-                    individual.enrollments.append(enr)
+        logger.info(f"Eclipse account processed; account={account['name']}; changed={account['changed']}")
 
-            logger.info(f"Eclipse account processed; account={account['name']}; changed={account['changed']}")
-
-            yield individual
+        return individual
 
     def post_process_individual(self, individual, uuid):
         """Post processing for Eclipse identities.
@@ -338,7 +371,7 @@ class EclipseFoundationAPIClient:
         response = requests.get(url, params=params, auth=self.token)
         response.raise_for_status()
 
-        return response
+        return response.json()
 
     def _authenticate(self, client_id, client_secret, scope):
         """Authenticate using OAuth2.
