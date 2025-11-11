@@ -1,5 +1,21 @@
 # Releases
 
+## sortinghat-eclipse-foundation 0.2.0 - (2025-11-11)
+
+**Bug fixes:**
+
+ * Account fetching ordered by UID\
+   Sort accounts by UID and adds support for resuming from a specific
+   page.
+
+**Performance improvements:**
+
+ * Parallel processing for importing accounts\
+   Implement parallel processing to improve the efficiency of account
+   imports. By processing multiple accounts simultaneously, we reduce the
+   overall time taken to fetch and process account data.
+
+
 ## sortinghat-eclipse-foundation 0.1.2 - (2025-11-03)
 
 **Bug fixes:**

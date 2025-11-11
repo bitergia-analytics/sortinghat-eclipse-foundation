@@ -1,7 +1,0 @@
----
-title: Account fetching ordered by UID
-category: fixed
-author: Jose Javier Merchante <jjmerchante@bitergia.com>
-issue: null
-notes: >
-  Sort accounts by UID and adds support for resuming from a specific page.
