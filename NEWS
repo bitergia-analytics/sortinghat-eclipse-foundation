@@ -1,5 +1,9 @@
 # Releases
 
+  ## sortinghat-eclipse-foundation 0.2.6 - (2026-05-06)
+  
+  * Update Poetry's package dependencies
+
   ## sortinghat-eclipse-foundation 0.2.5 - (2026-03-06)
   
   * Update Poetry's package dependencies
